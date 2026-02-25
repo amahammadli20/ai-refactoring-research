@@ -303,6 +303,50 @@ All experiments can be reproduced locally without external APIs.
 
 ---
 
+# Dataset Setup
+
+This repository does **not** store the SWE-Refactor dataset directly.
+
+The dataset file:
+
+    datasets/SWE-Refactor/pure_refactoring_data.json
+
+is intentionally excluded from version control because it exceeds GitHub’s recommended file size limits and is treated as external research data.
+
+## How to Prepare the Dataset
+
+1. Obtain the SWE-Refactor dataset (JSON format).
+2. Create the directory structure:
+
+       datasets/SWE-Refactor/
+
+3. Place the dataset file inside:
+
+       datasets/SWE-Refactor/pure_refactoring_data.json
+
+The evaluation script expects the dataset at this exact path.
+
+## Expected Script Usage
+
+Example execution:
+
+    python3 scripts/run_swe_refactor_offline.py \
+      --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
+      --local-llm scripts/local_llm.py \
+      --model deepseek-coder:1.3b \
+      --project commons-io \
+      --limit 20 \
+      --retries 0 \
+      --out /tmp/swe_method_commons_io.jsonl
+
+If the dataset file is not present at the expected location, the script will fail.
+
+---
+
+This design keeps the repository lightweight while ensuring reproducibility of experiments.
+
+---
+
 # 16. Conclusion
 
 This repository provides a research-grade infrastructure for evaluating LLM-based refactoring at the repository level.
