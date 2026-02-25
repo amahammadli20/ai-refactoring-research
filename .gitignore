@@ -13,3 +13,4 @@ data/
 out/
 *.jsonl
 *.log
+.github/workflows/
