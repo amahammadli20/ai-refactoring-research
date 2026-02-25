@@ -1,0 +1,860 @@
+import copy
+import functools
+import json
+import operator
+import os
+import re
+import subprocess
+from pathlib import Path
+from typing import Annotated, Sequence
+
+import yaml
+from langchain.tools.render import format_tool_to_openai_function
+from langchain_core.messages import (
+    BaseMessage,
+    FunctionMessage,
+    HumanMessage,
+)
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.constants import START
+from langgraph.graph import END, StateGraph
+from langgraph.prebuilt.tool_executor import ToolExecutor, ToolInvocation
+from tqdm import tqdm
+from typing_extensions import TypedDict
+
+from bm25 import BM25
+from compile_experiment import get_compile_result_in_commit, switch_java_version
+from rag.contextual_rag_process import get_context_description
+from multiple_agent_rag_refactoring_util import extract_method_util
+from utils.project_util import get_project_structure, read_java_file_content_in_commit
+from rag.rag_embedding import search_chroma, add_documents_to_chroma, chroma_client
+from rag.reciprocal_rank_fusion import ReciprocalRankFusion
+from model.refactoring_entity import RefactoringRepository
+from rag.reranking import Reranking
+from workflow_for_fix_bug import repair_code
+
+with open('config.yaml', 'r') as file:
+    config = yaml.safe_load(file)
+# OpenAI API key
+OPENAI_API_KEY = config['OPENAI_API_KEY']
+project_prefix_path = config['project_prefix_path']
+refactoring_map = RefactoringRepository.load_from_file(f"{project_prefix_path}/data/refactoring_info/refactoring_map_em_wc_v4.json",
+                                                   format="json")
+project_name = config['project_name']
+
+file_path = f'{project_prefix_path}/data/{project_name}/{project_name}_evaluation_data.json'
+project_path = f'{project_prefix_path}/projects/{project_name}'
+
+COMPILE_COUNT = 0
+CHECK_RE_COUNT = 0
+
+REFACTORED_CODE = ""
+COMPILE_RESULT = False
+REFACTORING_RESULT = False
+ERROR_LOG = ""
+EXTRACT_METHOD = ""
+REFACTORING_ID = ""
+
+with open(file_path, 'r') as file:
+    data = json.load(file)
+
+def create_agent(llm, tools, system_message: str):
+    """Create an agent."""
+    functions = [format_tool_to_openai_function(t) for t in tools]
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a helpful Refactoring AI assistant, collaborating with other assistants."
+                " Use the provided tools to progress towards answering the question."
+                " If you are unable to fully answer, that's OK, another assistant with different tools "
+                " will help where you left off. Execute what you can to make progress."
+                " If you don't communicate with the other assistants, please don't say FINAL ANSWER."
+                " Only if you or any of the other assistants have the final answer or deliverable,"
+                " prefix your final response with FINAL ANSWER so the team knows to stop."
+                " You have access to the following tools: {tool_names}.\n{system_message}",
+            ),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    prompt = prompt.partial(system_message=system_message)
+    prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
+    return prompt | llm.bind_functions(functions)
+
+def create_debugger_agent(llm, system_message: str):
+
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "{system_message}",
+            ),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    prompt = prompt.partial(system_message=system_message)
+    return prompt | llm
+
+
+@tool
+def get_similar_refactoring(source_code_before_refactoring: str, refactoring_type: str) -> list:
+    """
+    Get similar refactoring examples based on the source code before refactoring and refactoring type.
+    """
+    global REFACTORING_ID
+    refactoring = get_refactoring(REFACTORING_ID)
+    contextual_description = get_context_description(refactoring)
+    print("call get_similar_refactoring, source_code_before_refactoring: ", source_code_before_refactoring, "refactoring_type: ", refactoring_type)
+    bm25_model = BM25.load_model(f'{project_prefix_path}/data/model/refactoring_miner_em_wc_context_agent_collection_' + refactoring_type +'_bm25result.pkl')
+    return get_historical_refactorings(contextual_description, refactoring_map, bm25_model, refactoring_type)
+
+
+@tool
+def get_method_body_by_refactoring_id(refactoring_id: str) -> str:
+    """
+    Get the method body by refactoring ID.
+    """
+    print("call get_method_body_by_refactoring_id, refactoring_id: ", refactoring_id)
+
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['sourceCodeBeforeRefactoring']
+
+@tool
+def get_call_graph_by_refactoring_id(refactoring_id: str) -> str:
+    """
+    Get the call graph by refactoring ID.
+    """
+    print("call get_call_graph_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            if 'invokedMethod' not in refactoring:
+                return "No call graph available."
+            return refactoring['invokedMethod']
+
+@tool
+def get_class_signature_by_refactoring_id(refactoring_id: str) -> str:
+    """
+    Get the class signature by refactoring ID.
+    """
+    print("call get_class_signature_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['classSignatureBefore']
+
+@tool
+def get_methods_to_be_refactored_by_refactoring_id(refactoring_id: str) -> list:
+    """ Get the methods to be refactored by refactoring ID."""
+    print("call get_methods_to_be_refactored_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['methodNameBefore'] + "\n" + refactoring['sourceCodeBeforeRefactoring']
+
+@tool
+def get_package_name_by_refactoring_id(refactoring_id: str) -> str:
+    """
+    Get the package name by refactoring ID.
+    """
+    print("call get_package_name_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['packageNameBefore']
+
+@tool
+def get_class_name_by_refactoring_id(refactoring_id: str) -> str:
+    """
+    Get the class name by refactoring ID.
+    """
+    print("call get_class_name_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['classNameBefore']
+
+
+@tool
+def check_java_style(refactored_code: str, target_file_path:str = "") -> str:
+    """Input: refactored_code, target_file_path. If you perform move operation, you need to provide the exist target file path. Function: Check the Java code style using Checkstyle."""
+    config_file = f"{project_prefix_path}/data/config/sun_checks.xml"
+    file_path = f"{project_prefix_path}/data/tmp/TempClass.java"
+    print("call check_java_style")
+    file_path = Path(file_path)
+    file_path.write_text(refactored_code, encoding="utf-8")
+    global REFACTORED_CODE
+    global EXTRACT_METHOD
+    REFACTORED_CODE = refactored_code
+    # run checkstyle
+    result = subprocess.run(
+        ["java","-jar",f"{project_prefix_path}/data/tools/checkstyle-10.20.1-all.jar", "-c", config_file, str(file_path)],
+        capture_output=True,
+        text=True
+    )
+    style_result = result.stdout
+    lines = style_result.strip().splitlines()
+    error_lines = lines[2:] if len(lines) > 2 else []
+    error_descriptions = []
+    pattern = re.compile(r':(\d+):(\d+): (.*? \[.*?\].*?)')
+    for line in error_lines:
+        match = pattern.search(line)
+        if match:
+            line_number = int(match.group(1)) - 4
+            column_number = match.group(2)
+            message = match.group(3)
+            result = f"line:{line_number} column:{column_number}: {message}"
+            error_descriptions.append(result)
+    return "\n".join(error_descriptions)
+
+@tool
+def check_refactoring_result(refactoring_id: str, refactored_class_code: str, target_file_path: str = ""):
+    """ Input: refactored_code, refactored_class_code, and target_file_path. If you perform move operation, you need to provide the exist target file path. Function: Check if the code is actually refactored"""
+    global REFACTORING_RESULT
+    global REFACTORED_CODE
+    global EXTRACT_METHOD
+    REFACTORED_CODE = refactored_class_code
+    print("call check_refactoring_result, refactoring_id:", refactoring_id)
+    lazy_code = check_lazy_code(refactored_class_code)
+    if lazy_code:
+        REFACTORING_RESULT = False
+        return "False, Please provide the complete code without omitting any parts."
+    refactoring_type = ""
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            refactoring_type = refactoring['type']
+            if refactoring_type == "Move Method" or refactoring_type == "Move And Rename Method":
+                return check_move_method_refactoring(refactoring, refactored_class_code, target_file_path)
+            if refactoring_type == "Move And Inline Method":
+                return check_move_and_inline_method_refactoring(refactoring, refactored_class_code, target_file_path)
+            return check_refactoring(refactoring, refactored_class_code, refactoring_type)
+    REFACTORING_RESULT = False
+    return False, "the code didn't perform "+ refactoring_type + " operation."
+
+def check_refactoring_result_with_context(refactoring_id: str, refactored_class_code: str, target_file_path: str = ""):
+    global REFACTORING_RESULT
+    global REFACTORED_CODE
+    global EXTRACT_METHOD
+    REFACTORED_CODE = refactored_class_code
+    print("call check_refactoring_result_with_context, refactoring_id:", refactoring_id)
+    lazy_code = check_lazy_code(refactored_class_code)
+    if lazy_code:
+        REFACTORING_RESULT = False
+        return False,"Please provide the complete code without omitting any parts."
+    refactoring_type = ""
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            refactoring_type = refactoring['type']
+            if refactoring_type == "Move Method" or refactoring_type == "Move And Rename Method":
+                return check_move_method_refactoring(refactoring, refactored_class_code, target_file_path)
+            if refactoring_type == "Move And Inline Method":
+                return check_move_and_inline_method_refactoring(refactoring, refactored_class_code, target_file_path)
+            return check_refactoring(refactoring, refactored_class_code, refactoring_type)
+    REFACTORING_RESULT = False
+    return False, "the code didn't perform "+ refactoring_type + " operation."
+
+def check_refactoring(refactoring, refactored_class_code, refactoring_type):
+    global REFACTORING_RESULT
+    source_code_before_for_whole = refactoring['sourceCodeBeforeForWhole']
+    file_path_before = f"{project_prefix_path}/data/tmp/source_code_before_for_whole.txt"
+    file_path_after = f"{project_prefix_path}/data/tmp/source_code_after_for_whole.txt"
+    with open(file_path_before, "w", encoding="utf-8") as file:
+        file.write(source_code_before_for_whole)
+    with open(file_path_after, "w", encoding="utf-8") as file:
+        file.write(refactored_class_code)
+    java_file_path = refactoring['filePathBefore']
+    try:
+        os.chdir(project_prefix_path)
+        print(f"Switched to project directory: {project_path}")
+    except Exception as e:
+        print(f"Failed to switch to directory {project_path}: {e}")
+    switch_java_version(17)
+    exe_result = subprocess.run(
+        ["./data/tools/RefactoringMiner-3.0.10/bin/RefactoringMiner", "-scr", java_file_path, file_path_before,
+         file_path_after, refactoring_type], capture_output=True, text=True)
+    refactoring_result = exe_result.stdout
+    last_line = refactoring_result.strip().split('\n')[-1]
+    result_word = [word for word in last_line.split()]
+    if result_word[0] == "true":
+        REFACTORING_RESULT = True
+        return True, " the " + refactoring_type +" operation is successful."
+    else:
+        REFACTORING_RESULT = False
+        return False, " the code didn't perform " + refactoring_type +" operation."
+
+def check_refactoring_for_multiple_files(refactoring, target_file_path, refactored_class_code):
+    global REFACTORING_RESULT
+    original_file_path = project_path + "/" + refactoring['filePathBefore']
+    original_refactored_code = refactoring['sourceCodeBeforeForWhole'].replace(
+        refactoring['sourceCodeBeforeRefactoring'], "")
+    refactoring_type = refactoring['type']
+    target_refactored_code = refactored_class_code
+    original_refactored_code_path_after = f"{project_prefix_path}/data/tmp/original_refactored_code.txt"
+    target_refactored_code_path_after = f"{project_prefix_path}/data/tmp/target_refactored_code.txt"
+    with open(original_refactored_code_path_after, "w", encoding="utf-8") as file:
+        file.write(original_refactored_code)
+    with open(target_refactored_code_path_after, "w", encoding="utf-8") as file:
+        file.write(target_refactored_code)
+    exe_result = subprocess.run(
+        ["./data/tools/RefactoringMiner-3.0.10/bin/RefactoringMiner", "-spr", original_file_path, original_refactored_code_path_after,
+         target_file_path, target_refactored_code_path_after, refactoring_type], capture_output=True, text=True)
+    refactoring_result = exe_result.stdout
+    last_line = refactoring_result.strip().split('\n')[-1]
+    result_word = [word for word in last_line.split()]
+    if result_word[0] == "true":
+        REFACTORING_RESULT = True
+        return True, " the " + refactoring_type +" operation is successful."
+    else:
+        REFACTORING_RESULT = False
+        return False, " the code didn't perform " + refactoring_type +" operation."
+
+
+def check_move_and_inline_method_refactoring(refactoring, refactored_class_code, target_file_path):
+    global REFACTORING_RESULT
+    if target_file_path == "":
+        REFACTORING_RESULT = False
+        return False, "the target file path is empty, please move to an existing java file."
+    full_file_path = project_path + "/" + target_file_path
+    if not os.path.exists(full_file_path):
+        REFACTORING_RESULT = False
+        return False, " this is a new file, please move to an existing java file."
+    with open(full_file_path, "r", encoding="utf-8") as file:
+        target_class_code = file.read()
+    method_name_before = refactoring['methodNameBefore'].split("#")[1]
+    if method_name_before not in target_class_code:
+        REFACTORING_RESULT = False
+        return False, " the call of move method is not in the target class."
+    return check_refactoring_for_multiple_files(refactoring, full_file_path, refactored_class_code)
+
+
+def check_move_method_refactoring(refactoring, refactored_class_code, target_file_path):
+    global REFACTORING_RESULT
+    if target_file_path == "":
+        REFACTORING_RESULT = False
+        return False, "the target file path is empty, please move to an existing java file."
+    full_file_path = project_path + "/" + target_file_path
+    print("full_file_path: ", full_file_path)
+    if not os.path.exists(full_file_path):
+        REFACTORING_RESULT = False
+        return False, " this is a new file, please move to an existing java file."
+    return check_refactoring_for_multiple_files(refactoring, full_file_path, refactored_class_code)
+
+# @tool
+# def get_file_path_before(refactoring_id: str) -> str:
+#     """Get the file path before refactoring by refactoring ID."""
+#     print("call get_file_path_before, refactoring_id: ", refactoring_id)
+#     for refactoring in data:
+#         if refactoring['uniqueId'] == refactoring_id:
+#             return refactoring['filePathBefore']
+
+@tool
+def get_project_structure_info(refactoring_id: str = "") -> list:
+    """Get the project structure information list by refactoring ID. This is for move operation to find the target file path."""
+    print("call get_project_structure_info, refactoring_id:", refactoring_id)
+    if refactoring_id == "":
+        return "Please provide the refactoring_id parameter."
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            file_path_before = refactoring['filePathBefore']
+            return get_project_structure(project_path, refactoring['commitId'], file_path_before)
+
+@tool
+def get_class_content_by_refactoring_id(refactoring_id: str) -> str:
+    """Get the class content by refactoring ID."""
+    print("call get_class_content_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['sourceCodeBeforeForWhole']
+
+@tool
+def get_java_file_content(refactoring_id: str, file_path: str) -> str:
+    """This is for move operation to check the target file's content. Get the Java file content by refactoring ID and absolute file path."""
+    print("call get_java_file_content, refactoring_id: ", refactoring_id, "file_path: ", file_path)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            file_path = project_path + "/" + file_path
+            return read_java_file_content_in_commit(project_path, refactoring['commitId'], file_path)
+
+@tool
+def get_refactoring_operation_by_refactoring_id(refactoring_id: str) -> str:
+    """Get the refactoring operation by refactoring ID."""
+    print("call get_refactoring_operation_by_refactoring_id, refactoring_id: ", refactoring_id)
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['type']
+
+def check_packages_and_imports(refactored_class_code):
+    lines = refactored_class_code.split("\n")
+    has_package = any(line.strip().startswith("package ") for line in lines)
+    has_import = any(line.strip().startswith("import ") for line in lines)
+    print("has_package: ", has_package, "has_import: ", has_import)
+    return has_package and has_import
+@tool
+def check_compile_result(refactoring_id: str, refactored_class_code: str, target_file_path: str = "") -> str:
+    """Input: refactored_code, refactored_class_code, and target_file_path. If you perform move operation, you need to provide the exist target file path. Function: Check the compile result of the refactored code."""
+    global COMPILE_RESULT
+    global REFACTORING_RESULT
+    global REFACTORED_CODE
+    global ERROR_LOG
+    REFACTORED_CODE = refactored_class_code
+    print("call check_compile_result, refactoring_id: ", refactoring_id)
+    refactoring_log = ""
+    if not REFACTORING_RESULT:
+        refactoring_result, refactoring_log = check_refactoring_result_with_context(refactoring_id, refactored_class_code, target_file_path)
+        refactoring_log = "\nCheck Refactoring Result:" + refactoring_log
+
+    lazy_code = check_lazy_code(refactored_class_code)
+    if lazy_code:
+        COMPILE_RESULT = False
+        ERROR_LOG = "False, Please provide the complete code without omitting any parts."
+        return "False, Please provide the complete code without omitting any parts." + refactoring_log
+    check_package_imports_result = check_packages_and_imports(refactored_class_code)
+    if not check_package_imports_result:
+        COMPILE_RESULT = False
+        ERROR_LOG = "False, Please provide the package and import statements in the refactored code."
+        return "False, Please provide the package and import statements in the refactored code." + refactoring_log
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            if refactoring['type'] == "Move Method" or refactoring['type'] == "Move And Rename Method" or refactoring['type'] == "Move And Inline Method":
+                return check_move_method_compile_result(refactoring, refactored_class_code, target_file_path) + refactoring_log
+            file_path = project_path + "/" + refactoring['filePathBefore']
+            java_version = refactoring['compileJDK']
+            compile_result, log = get_compile_result_in_commit(project_path, refactoring['commitId'], file_path, refactored_class_code, java_version)
+            if compile_result:
+                COMPILE_RESULT = True
+                ERROR_LOG = ""
+                return "The refactored code compiles successfully." + refactoring_log
+            else:
+                COMPILE_RESULT = False
+                ERROR_LOG = log
+                return f"The refactored code does not compile successfully. The error log is as follows: {log}" + refactoring_log
+    COMPILE_RESULT = False
+    ERROR_LOG = "cannot find the refactoring id"
+    return "cannot find the refactoring id" + refactoring_log
+
+
+def check_move_method_compile_result(refactoring, refactored_class_code, target_file_path):
+    global COMPILE_RESULT
+    global ERROR_LOG
+    if target_file_path == "":
+        COMPILE_RESULT = False
+        ERROR_LOG = "False, the target file path is empty, please move to an existing java file."
+        return "False, the target file path is empty, please move to an existing java file."
+    full_file_path = project_path + "/" + target_file_path
+    if not os.path.exists(full_file_path):
+        COMPILE_RESULT = False
+        ERROR_LOG = "False, this is a new file, please move to an existing java file."
+        return "False, The target file path does not exist, please move to an existing java file."
+    java_version = refactoring['compileJDK']
+    compile_result, log = get_compile_result_in_commit(project_path, refactoring['commitId'], full_file_path,
+                                                       refactored_class_code, java_version)
+    if compile_result:
+        COMPILE_RESULT = True
+        ERROR_LOG = ""
+        return "The refactored code compiles successfully."
+    else:
+        COMPILE_RESULT = False
+        ERROR_LOG = log
+        return f"The refactored code does not compile successfully. The error log is as follows: {log}"
+
+def get_historical_refactorings(search_text, refactoring_map, bm25_model, refactoring_type):
+    # get embedding search result
+    embedding_result = search_chroma(search_text, n_results=10, collection_name='refactoring_miner_em_wc_context_agent_collection', refactoring_type=refactoring_type)
+    embedding_document = embedding_result['documents'][0]
+    # get BM25 search result
+    bm25_document = bm25_model.search(search_text, top_n=10)
+    # reciprocal rank fusion
+    ranked_lists = [embedding_document, bm25_document]
+    rrf = ReciprocalRankFusion(k=60)
+
+    scores = rrf.fuse(ranked_lists)
+
+    # Get the top 10 documents
+    top_docs = rrf.get_top_n(scores, n=10)
+
+    top_docs_text = [doc[0] for doc in top_docs]
+    # Reranking the top 10 documents
+    reranker = Reranking("colbert")
+    query = search_text
+    ranked_results = reranker.rerank(query, top_docs_text)
+    top_ranked_result = ranked_results.top_k(3)
+    metadata_refactoring = []
+    for result in top_ranked_result:
+        metadata_refactoring.append(refactoring_map[result.document.text])
+    search_result = "\n".join([
+        f"Example {i + 1}:\n Refactoring Description:\n {example['description']}\n SourceCodeBeforeRefactoring:\n {example['sourceCodeBeforeRefactoring']}\n filePathBefore:\n {example['filePathBefore']}\n SourceCodeAfterRefactoring:\n {example['sourceCodeAfterRefactoring']}"
+        for i, example in enumerate(metadata_refactoring)
+    ])
+    return search_result
+
+def get_refactoring_type(refactoring_id):
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring['type']
+
+refactoring_tools = [get_refactoring_operation_by_refactoring_id, get_project_structure_info, get_class_content_by_refactoring_id, get_java_file_content, get_class_signature_by_refactoring_id, get_package_name_by_refactoring_id, get_similar_refactoring, get_call_graph_by_refactoring_id, get_class_name_by_refactoring_id, get_methods_to_be_refactored_by_refactoring_id]
+reviewer_tools = [check_compile_result, check_refactoring_result, check_java_style]
+
+# This defines the object that is passed between each node
+# in the graph. We will create different nodes for each agent and tool
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    sender: str
+
+
+# Helper function to create a node for a given agent
+def agent_node(state, agent, name):
+    result = agent.invoke(state)
+    # We convert the agent output into a format that is suitable to append to the global state
+    if isinstance(result, FunctionMessage):
+        pass
+    else:
+        result = HumanMessage(**result.dict(exclude={"type", "name"}), name=name)
+    return {
+        "messages": [result],
+        # Since we have a strict workflow, we can
+        # track the sender so we know who to pass to next.
+        "sender": name,
+    }
+
+
+
+
+# create the LLM
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=OPENAI_API_KEY)
+# llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0, openai_api_key=OPENAI_API_KEY)
+# llm = ChatOpenAI(model="deepseek-chat", temperature=0, api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+
+# Research agent and node
+developer_agent = create_agent(
+    llm,
+    refactoring_tools,
+    system_message="You are a developer to refactoring. You should refactor the code retrieved from `get_class_content_by_refactoring_id` based on the provided `refactoring_id`, you can use `get_methods_to_be_refactored_by_refactoring_id` to locate the specific method to be refactored.  During the refactoring process, You need to first use `get_refactoring_operation_by_refactoring_id` to get refactoring operation, and then use get_similar_refactoring to obtain the most similar refactoring example for reference according to source code and operation type. If additional information is required, such as filePath, className or PackageName, Project Structure Information, Java file Content, specific tools can be used to gather this data. For Inline Method, you can keep the original method in the class. For Move Operation, You should output the refactored code of the file you moved to, ignore the original class. Please provide the complete code without omitting any parts. Do not abbreviate or truncate the code. You should output the whole java file content after refactoring without omitting any code and the `target_file_path` for move operation. If the code need to be moved to another class, you should output the path of the target class, i.e. `target_file_path`. The ultimate goal is to produce executable refactored code.",
+)
+developer_node = functools.partial(agent_node, agent= developer_agent, name="Developer")
+
+reviewer_agent = create_agent(
+    llm,
+    reviewer_tools,
+    system_message="As a code review expert specializing in refactoring, your role is to work closely with the developer, providing continuous feedback to enhance code quality. When reviewing the refactored code, no matter is before or after the update, you must use the `check_compile_result` to check the compile result, the `check_refactoring_result` tool to verify that refactoring was indeed applied, `check_java_style` to assess adherence to Java style guidelines. Checking the refactoring result is the most important thing to ensure that the refactoring operation is successful, you must keep the refactoring perform successfully. You don't need to refactoring this code, just give the comprehensive report to developer. You cannot give a feedback report without executing these three tools. The report should includes, the compile result, refactoring result, the style issue, and the error log of compile result, the position of buggy code. Do not write any other words in the report, just give the information to Developer.",
+)
+reviewer_node = functools.partial(agent_node, agent=reviewer_agent, name="Reviewer")
+
+
+tools = refactoring_tools + reviewer_tools
+tool_executor = ToolExecutor(tools)
+
+def tool_node(state):
+    """This runs tools in the graph
+
+    It takes in an agent action and calls that tool and returns the result."""
+    messages = state["messages"]
+    # Based on the continue condition
+    # we know the last message involves a function call
+    last_message = messages[-1]
+    # We construct an ToolInvocation from the function_call
+    tool_input = json.loads(
+        last_message.additional_kwargs["function_call"]["arguments"]
+    )
+    # We can pass single-arg inputs by value
+    if len(tool_input) == 1 and "__arg1" in tool_input:
+        tool_input = next(iter(tool_input.values()))
+    tool_name = last_message.additional_kwargs["function_call"]["name"]
+    action = ToolInvocation(
+        tool=tool_name,
+        tool_input=tool_input,
+    )
+    # We call the tool_executor and get back a response
+    response = tool_executor.invoke(action)
+    # We use the response to create a FunctionMessage
+    function_message = FunctionMessage(
+        content=f"{tool_name} response: {str(response)}", name=action.tool
+    )
+    # We return a list, because this will get added to the existing list
+    return {"messages": [function_message]}
+
+# Either agent can decide to end
+def router(state):
+    global COMPILE_RESULT
+    global REFACTORING_RESULT
+    # This is the router
+    global COMPILE_COUNT
+    messages = state["messages"]
+    last_message = messages[-1]
+    if "function_call" in last_message.additional_kwargs:
+        # The previus agent is invoking a tool
+        return "call_tool"
+    if COMPILE_RESULT and REFACTORING_RESULT:
+        # Any agent decided the work is done
+        return "end"
+    # if "```json" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    # if "successfully completed" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    # if "Great collaboration" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    #
+    # if "You're welcome!" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+
+    return "continue"
+
+def reviewer_router(state):
+    # This is the router
+    global COMPILE_COUNT
+    global CHECK_RE_COUNT
+    global COMPILE_RESULT
+    global REFACTORING_RESULT
+    messages = state["messages"]
+    last_message = messages[-1]
+    if "function_call" in last_message.additional_kwargs:
+        # The previus agent is invoking a tool
+        if "name" in last_message.additional_kwargs["function_call"]:
+            call_name = last_message.additional_kwargs["function_call"]["name"]
+            if call_name == "check_compile_result":
+                if COMPILE_COUNT >= 2:
+                    COMPILE_COUNT =0
+                    return "continue"
+                COMPILE_COUNT = COMPILE_COUNT + 1
+            if call_name == "check_refactoring_result":
+                if CHECK_RE_COUNT >= 2:
+                    CHECK_RE_COUNT = 0
+                    return "continue"
+                CHECK_RE_COUNT = CHECK_RE_COUNT + 1
+
+
+        return "call_tool"
+    if COMPILE_RESULT and REFACTORING_RESULT:
+        # Any agent decided the work is done
+        return "end"
+    # if "```json" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    # if "successfully completed" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    # if "You're welcome!" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    # if "Great collaboration" in last_message.content:
+    #     # Any agent decided the work is done
+    #     return "end"
+    return "continue"
+workflow = StateGraph(AgentState)
+
+workflow.add_node("Developer", developer_node)
+workflow.add_node("Reviewer", reviewer_node)
+workflow.add_node("call_tool", tool_node)
+
+workflow.add_conditional_edges(
+    "Developer",
+    router,
+    {"continue": "Reviewer", "call_tool": "call_tool", "end": END},
+)
+workflow.add_conditional_edges(
+    "Reviewer",
+    reviewer_router,
+    {"continue": "Developer", "call_tool": "call_tool", "end": END},
+)
+
+workflow.add_conditional_edges(
+    "call_tool",
+    # Each agent node updates the 'sender' field
+    # the tool calling node does not, meaning
+    # this edge will route back to the original agent
+    # who invoked the tool
+    lambda x: x["sender"],
+    {
+        "Developer": "Developer",
+        "Reviewer": "Reviewer",
+    },
+)
+workflow.add_edge(START, "Developer")
+graph = workflow.compile()
+
+# Read the prompt
+with open('data/prompts/refactoring_prompt_main.txt', 'r') as file:
+    file_contents = file.read()
+
+def get_refactoring_ids_from_json(start = 0, end = 300):
+    refactoring_ids = []
+    count = 0
+    for refactoring in data:
+        if start <= count < end:
+            refactoring_ids.append(refactoring['uniqueId'])
+        count += 1
+    return refactoring_ids
+
+def get_refactoring_ids_from_txt(file_path, start, end):
+    refactoring_ids = []
+    count = 0
+    with open(file_path, 'r') as file:
+        for line in file:
+            if start <= count < end:
+                refactoring_ids.append(line.strip())
+            count += 1
+    return refactoring_ids
+
+def add_result_to_refactoring(refactoring_id, answers):
+    global REFACTORED_CODE
+    global REFACTORING_RESULT
+    global COMPILE_RESULT
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            answers_track = [answers[i]["messages"][0].content for i in range(len(answers))]
+            refactoring['agentChatLog'] = answers_track
+            refactoring['refactoringMinerResult'] = REFACTORING_RESULT
+            refactoring['agentRefactoredCode'] = REFACTORED_CODE
+            refactoring['compileAndTestResult'] = COMPILE_RESULT
+            return refactoring
+
+def refactor_code(refactoring_id, prompt2):
+    answers = []
+    try:
+        for s in graph.stream(
+                {
+                    "messages": [
+                        HumanMessage(
+                            content=prompt2
+                        )
+                    ],
+                },
+                # Maximum number of steps to take in the graph
+                {"recursion_limit": 50},
+        ):
+            for key, value in s.items():
+                print(f"Output from node '{key}':")
+                print("---")
+                print(value)
+                # parse_and_save_json(value['messages'][0].content, project_name, bug_id)
+                answers.append(value)
+            print("\n---\n")
+    except Exception as e:
+        print(f"Error: {e}, refactoring_id: {refactoring_id}")
+        return add_result_to_refactoring(refactoring_id, answers)
+    return add_result_to_refactoring(refactoring_id, answers)
+
+def check_lazy_code(refactored_code):
+    if "other fields and methods remain unchanged" in refactored_code:
+        return True
+    if "// Other test methods..." in refactored_code:
+        return True
+    return False
+
+def perform_repair(refactoring_for_repair):
+    global ERROR_LOG
+    compile_result = refactoring_for_repair['compileAndTestResult']
+    if not compile_result:
+        buggy_code = refactoring_for_repair['agentRefactoredCode']
+        error_log = str(ERROR_LOG)
+        buggy_code_file_path = f"{project_prefix_path}/data/bugs/" + refactoring_for_repair['uniqueId'] + "_buggy_code.txt"
+        buggy_code_file_path = Path(buggy_code_file_path)
+        buggy_code_file_path.write_text(buggy_code, encoding="utf-8")
+        error_log_file_path = f"{project_prefix_path}/data/error_logs/" + refactoring_for_repair['uniqueId'] + "_error_log.txt"
+        error_log_file_path = Path(error_log_file_path)
+        error_log_file_path.write_text(error_log, encoding="utf-8")
+        repaired_code = repair_code(refactoring_for_repair['uniqueId'])
+        if repaired_code is not None:
+            refactoring_for_repair['repairRefactoredCode'] = repaired_code['repairRefactoredCode']
+            refactoring_for_repair['repairCompileAndTestResult'] = repaired_code['repairCompileAndTestResult']
+            return refactoring_for_repair
+        refactoring_for_repair['repairRefactoredCode'] = ""
+        refactoring_for_repair['repairCompileAndTestResult'] = False
+        return refactoring_for_repair
+    return refactoring_for_repair
+
+def set_refactoring_type(refactoring_id, refactoring_type):
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            # 1. first perform extract method refactoring
+            refactoring['type'] = refactoring_type
+
+def get_refactoring(refactoring_id):
+    for refactoring in data:
+        if refactoring['uniqueId'] == refactoring_id:
+            return refactoring
+
+def get_after_move_refactoring(refactoring_id, refactoring_result, refactoring_code):
+    # global EXTRACT_METHOD
+    refactoring_before = get_refactoring(refactoring_id)
+    refactoring_for_move = copy.deepcopy(refactoring_before)
+    refactoring_for_move['type'] = "Move Method"
+    refactoring_for_move['sourceCodeBeforeForWhole'] = refactoring_result[refactoring_code]
+    refactoring_for_move['uniqueId'] = refactoring_id + "_move"
+    refactoring_for_move['sourceCodeBeforeRefactoring'] = refactoring_result['extractMethodCode']
+    refactoring_for_move['methodNameBefore'] = ""
+    data.append(refactoring_for_move)
+    prompt2 = f"{file_contents.format(refactoring_id=refactoring_for_move['uniqueId'])}"
+    refactoring_result_after_move = refactor_code(refactoring_for_move['uniqueId'], prompt2)
+    return refactoring_result_after_move
+
+def handle_extract_and_move_method(refactoring_id):
+    set_refactoring_type(refactoring_id, "Extract Method")
+    refactoring_result = extract_method_util(refactoring_id, True)
+    if refactoring_result['refactoringMinerResult'] and not refactoring_result['compileAndTestResult']:
+        if refactoring_result['repairCompileAndTestResult']:
+            refactoring_result_after_move = get_after_move_refactoring(refactoring_id, refactoring_result, 'repairRefactoredCode')
+            refactoring_result['moveMethodResult'] = refactoring_result_after_move
+            refactoring_result['moveMethodResultRefactoringMiner'] = refactoring_result_after_move['refactoringMinerResult']
+            return refactoring_result
+    elif refactoring_result['refactoringMinerResult'] and refactoring_result['compileAndTestResult']:
+        refactoring_result_after_move = get_after_move_refactoring(refactoring_id, refactoring_result,'agentRefactoredCode')
+        refactoring_result['moveMethodResult'] = refactoring_result_after_move
+        refactoring_result['moveMethodResultRefactoringMiner'] = refactoring_result_after_move['refactoringMinerResult']
+        return refactoring_result
+    return refactoring_result
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+
+    connection = chroma_client.get_or_create_collection(name='refactoring_miner_em_wc_context_agent_collection')
+    if connection.count() == 0:
+        print("add documents to chroma")
+        add_documents_to_chroma('refactoring_miner_em_wc_context_agent_collection',
+                            '../data/refactoring_info/refactoring_miner_em_refactoring_context_w_sc_v4.json', 2000)
+        print("add documents: ")
+        print(connection.count())
+        print("add documents to chroma done")
+    else:
+        print("chroma already has documents")
+        print ("document count: ")
+        print(connection.count())
+
+
+    refactoring_ids = get_refactoring_ids_from_json()
+    refactoring_result_list = []
+    for refactoring_id in tqdm(refactoring_ids):
+        REFACTORING_ID = refactoring_id
+        REFACTORING_RESULT = False
+        COMPILE_RESULT = False
+        prompt2 = f"{file_contents.format(refactoring_id=refactoring_id)}"
+        refactoring_type = get_refactoring_type(refactoring_id)
+        if refactoring_type == "Pull Up Method" or refactoring_type == "Push Down Method":
+            print(f"Refactoring {refactoring_id} is Pull Up Method or Push Down Method, skip.")
+            continue
+        if refactoring_type == "Extract Method":
+            refactoring_result = extract_method_util(refactoring_id)
+            refactoring_result_list.append(refactoring_result)
+            continue
+        if refactoring_type == "Extract And Move Method":
+            extract_and_move_method_result = handle_extract_and_move_method(refactoring_id)
+            refactoring_result_list.append(extract_and_move_method_result)
+            continue
+        refactoring_result = refactor_code(refactoring_id, prompt2)
+        if refactoring_result['refactoringMinerResult'] and not refactoring_result['compileAndTestResult']:
+            refactoring_result = perform_repair(refactoring_result)
+        refactoring_result_list.append(refactoring_result)
+
+    output_file_path = f'{project_prefix_path}/data/{project_name}/{project_name}_muarf_refactoring_result.json'
+    with open(output_file_path, 'w') as file:
+        json.dump(refactoring_result_list, file, indent=4)

@@ -1,0 +1,10 @@
+https://github.com/checkstyle/checkstyle.git
+https://github.com/apache/commons-lang.git
+https://github.com/apache/commons-io.git
+https://github.com/hibernate/hibernate-orm.git
+https://github.com/hibernate/hibernate-search.git
+https://github.com/javaparser/javaparser.git
+https://github.com/junit-team/junit4.git
+https://github.com/junit-team/junit5.git
+https://github.com/mockito/mockito.git
+https://github.com/pmd/pmd.git

@@ -1,0 +1,196 @@
+[
+    {
+        "type": "Extract Method",
+        "description": "Extract Method\tprivate assertPatternMatch(pattern String, path String) : void extracted from public testSimplePattern() : void in class org.apache.shiro.util.RegExPatternMatcherTest",
+        "diffLocations": [
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 33,
+                "endLine": 41,
+                "startColumn": 0,
+                "endColumn": 0
+            },
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 31,
+                "endLine": 34,
+                "startColumn": 0,
+                "endColumn": 0
+            },
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 58,
+                "endLine": 60,
+                "startColumn": 0,
+                "endColumn": 0
+            }
+        ],
+        "sourceCodeBeforeRefactoring": "@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }",
+        "filePathBefore": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+        "isPureRefactoring": true,
+        "commitId": "f42ae2c79ca7268535f4fa907d36572b953a88a6",
+        "packageNameBefore": "org.apache.shiro.util",
+        "classNameBefore": "org.apache.shiro.util.RegExPatternMatcherTest",
+        "methodNameBefore": "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern",
+        "invokedMethod": "methodSignature: org.apache.shiro.util.RegExPatternMatcher#matches\n methodBody: public boolean matches(String pattern, String source) {\nif(pattern == null){throw new IllegalArgumentException(\"pattern argument cannot be null.\");\n}Pattern p=Pattern.compile(pattern);\nMatcher m=p.matcher(source);\nreturn m.matches();\n}",
+        "classSignatureBefore": "public class RegExPatternMatcherTest ",
+        "methodNameBeforeSet": [
+            "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern"
+        ],
+        "classNameBeforeSet": [
+            "org.apache.shiro.util.RegExPatternMatcherTest"
+        ],
+        "classSignatureBeforeSet": [
+            "public class RegExPatternMatcherTest "
+        ],
+        "purityCheckResultList": [
+            {
+                "isPure": true,
+                "purityComment": "Overlapped refactoring - can be identical by undoing the overlapped refactoring\n- Inline Variable-",
+                "description": "Inline Variable on top of the extracted method - all mapped",
+                "mappingState": 1
+            }
+        ],
+        "sourceCodeBeforeForWhole": "/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n",
+        "filePathAfter": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+        "sourceCodeAfterForWhole": "/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        assertPatternMatch(\"a*b\", \"aaaaaaab\");\n    }\n\n    @Test\n    public void testMatchesWithCarriageReturn() {\n        assertPatternMatch(\".*\", \"/blah\\n\");\n    }\n\n    @Test\n    public void testMatchesWithLineFeed() {\n        assertPatternMatch(\".*\", \"/blah\\r\");\n    }\n\n    @Test\n    public void testCaseInsensitive() {\n        RegExPatternMatcher pm = new RegExPatternMatcher();\n        pm.setCaseInsensitive(true);\n        assertPatternMatch(\"/blah\", \"/BlaH\", pm);\n    }\n\n    @Test\n    public void testCaseSensitive() {\n        assertPatternNotMatch(\"/blah\", \"/BlaH\");\n    }\n\n    private void assertPatternMatch(String pattern, String path) {\n        assertPatternMatch(pattern, path, new RegExPatternMatcher());\n    }\n\n    private void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n        assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }\n\n    private void assertPatternNotMatch(String pattern, String path) {\n        assertPatternNotMatch(pattern, path, new RegExPatternMatcher());\n    }\n\n    private void assertPatternNotMatch(String pattern, String path, PatternMatcher pm) {\n        assertFalse(\"Expected path '\" + path + \"' to NOT match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }\n}\n",
+        "diffSourceCodeSet": [
+            "private void assertPatternMatch(String pattern, String path) {\n        assertPatternMatch(pattern, path, new RegExPatternMatcher());\n    }"
+        ],
+        "invokedMethodSet": [
+            "methodSignature: org.apache.shiro.util.RegExPatternMatcher#matches\n methodBody: public boolean matches(String pattern, String source) {\nif(pattern == null){throw new IllegalArgumentException(\"pattern argument cannot be null.\");\n}Pattern p=Pattern.compile(pattern);\nMatcher m=p.matcher(source);\nreturn m.matches();\n}"
+        ],
+        "sourceCodeAfterRefactoring": "@Test\n    public void testSimplePattern() {\n        assertPatternMatch(\"a*b\", \"aaaaaaab\");\n    }\nprivate void assertPatternMatch(String pattern, String path) {\n        assertPatternMatch(pattern, path, new RegExPatternMatcher());\n    }",
+        "diffSourceCode": "-   31: public class RegExPatternMatcherTest {\n-   32: \n-   33:     @Test\n-   34:     public void testSimplePattern() {\n-   35:         PatternMatcher pm = new RegExPatternMatcher();\n-   36:         String pattern = \"a*b\";\n-   37:         String test = \"aaaaaaab\";\n-   38:         //not necessary for the test, but Idea performs auto validation when it sees this:\n-   39:         Pattern.compile(pattern);\n-   40:         assertTrue(pm.matches(pattern, test));\n-   41:     }\n+   31:     @Test\n+   32:     public void testSimplePattern() {\n+   33:         assertPatternMatch(\"a*b\", \"aaaaaaab\");\n+   34:     }\n+   35: \n+   36:     @Test\n+   37:     public void testMatchesWithCarriageReturn() {\n+   38:         assertPatternMatch(\".*\", \"/blah\\n\");\n+   39:     }\n+   40: \n+   41:     @Test\n+   58:     private void assertPatternMatch(String pattern, String path) {\n+   59:         assertPatternMatch(pattern, path, new RegExPatternMatcher());\n+   60:     }\n",
+        "uniqueId": "f42ae2c79ca7268535f4fa907d36572b953a88a6_33_41_58_60_31_34",
+        "moveFileExist": true,
+        "testResult": true,
+        "coverageInfo": {
+            "testMethod": {
+                "missed": 0,
+                "covered": 1
+            }
+        },
+        "compileResultBefore": true,
+        "compileResultCurrent": true,
+        "compileJDK": 17,
+        "callGraph": {
+            "methodId": "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern()",
+            "callers": [],
+            "callees": [
+                "java.util.regex.Pattern#<clinit>()",
+                "org.junit.Assert#assertTrue(boolean)",
+                "java.util.regex.Pattern#compile(String)",
+                "org.apache.shiro.util.RegExPatternMatcher#<init>()"
+            ],
+            "methodSourceMap": {
+                "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern()": "@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    //not necessary for the test, but Idea performs auto validation when it sees this:\n    Pattern.compile(pattern);\n    assertTrue(pm.matches(pattern, test));\n}"
+            }
+        },
+        "phase1": {
+            "prompt": "Task: Refactor code as requested.\n\nCode to be Refactored:\n@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\nClass content:\n/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n\n\nRefactoring Operation:\nExtract Method\n\nInstructions:\n1. Analyze the provided code and class content, apply relevant refactoring operation to the code to be refactored.\n2. If refactoring is performed, output the refactored_method_code in the following format:\n##########################\nrefactored_method_code\n##########################\n\n\n\n",
+            "output": "The provided code snippet already contains a single test method `testSimplePattern` which tests the functionality of a `RegExPatternMatcher`. The method compiles a regular expression pattern and checks if it matches a given string. Since there is only one method in the class, extracting this method further would not provide any significant benefits or improve readability.\n\nHowever, if we were to extract the pattern compilation into a separate method for better reusability or testing purposes, here's how you could do it:\n\n```java\nprivate Pattern compilePattern(String pattern) {\n    return Pattern.compile(pattern);\n}\n```\n\nAnd then use this method in your test:\n\n```java\n@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    // Compile the pattern using a separate method for better reusability\n    Pattern compiledPattern = compilePattern(pattern);\n    assertTrue(pm.matches(compiledPattern, test));\n}\n```\n\nThis refactoring would make it easier to reuse the `compilePattern` method in other tests or parts of your application. However, since there is only one test method, this specific extraction might not be necessary unless you plan to add more tests that require pattern compilation."
+        },
+        "refactoredCode": "The provided code snippet already contains a single test method `testSimplePattern` which tests the functionality of a `RegExPatternMatcher`. The method compiles a regular expression pattern and checks if it matches a given string. Since there is only one method in the class, extracting this method further would not provide any significant benefits or improve readability.\n\nHowever, if we were to extract the pattern compilation into a separate method for better reusability or testing purposes, here's how you could do it:\n\n```java\nprivate Pattern compilePattern(String pattern) {\n    return Pattern.compile(pattern);\n}\n```\n\nAnd then use this method in your test:\n\n```java\n@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    // Compile the pattern using a separate method for better reusability\n    Pattern compiledPattern = compilePattern(pattern);\n    assertTrue(pm.matches(compiledPattern, test));\n}\n```\n\nThis refactoring would make it easier to reuse the `compilePattern` method in other tests or parts of your application. However, since there is only one test method, this specific extraction might not be necessary unless you plan to add more tests that require pattern compilation.",
+        "refactoringMinerResult": true,
+        "compileAndTestResult": false,
+        "prompt": "Task: Refactor code as requested.\n\nCode to be Refactored:\n@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\nClass content:\n/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n\n\nRefactoring Operation:\nExtract Method\n\nInstructions:\n1. Analyze the provided code and class content, apply relevant refactoring operation to the code to be refactored.\n2. If refactoring is performed, output the refactored_method_code in the following format:\n##########################\nrefactored_method_code\n##########################\n\n\n\n"
+    },
+    {
+        "type": "Extract Method",
+        "description": "Extract Method\tprivate assertPatternMatch(pattern String, path String, pm PatternMatcher) : void extracted from public testSimplePattern() : void in class org.apache.shiro.util.RegExPatternMatcherTest",
+        "diffLocations": [
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 33,
+                "endLine": 41,
+                "startColumn": 0,
+                "endColumn": 0
+            },
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 62,
+                "endLine": 64,
+                "startColumn": 0,
+                "endColumn": 0
+            },
+            {
+                "filePath": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+                "startLine": 62,
+                "endLine": 64,
+                "startColumn": 0,
+                "endColumn": 0
+            }
+        ],
+        "sourceCodeBeforeRefactoring": "@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }",
+        "filePathBefore": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+        "isPureRefactoring": true,
+        "commitId": "f42ae2c79ca7268535f4fa907d36572b953a88a6",
+        "packageNameBefore": "org.apache.shiro.util",
+        "classNameBefore": "org.apache.shiro.util.RegExPatternMatcherTest",
+        "methodNameBefore": "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern",
+        "invokedMethod": "methodSignature: org.apache.shiro.util.RegExPatternMatcher#matches\n methodBody: public boolean matches(String pattern, String source) {\nif(pattern == null){throw new IllegalArgumentException(\"pattern argument cannot be null.\");\n}Pattern p=Pattern.compile(pattern);\nMatcher m=p.matcher(source);\nreturn m.matches();\n}",
+        "classSignatureBefore": "public class RegExPatternMatcherTest ",
+        "methodNameBeforeSet": [
+            "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern"
+        ],
+        "classNameBeforeSet": [
+            "org.apache.shiro.util.RegExPatternMatcherTest"
+        ],
+        "classSignatureBeforeSet": [
+            "public class RegExPatternMatcherTest "
+        ],
+        "purityCheckResultList": [
+            {
+                "isPure": true,
+                "purityComment": "Overlapped refactoring - can be identical by undoing the overlapped refactoring\n- Inline Variable-",
+                "description": "Inline Variable on top of the extracted method - all mapped",
+                "mappingState": 1
+            }
+        ],
+        "sourceCodeBeforeForWhole": "/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n",
+        "filePathAfter": "core/src/test/java/org/apache/shiro/util/RegExPatternMatcherTest.java",
+        "sourceCodeAfterForWhole": "/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        assertPatternMatch(\"a*b\", \"aaaaaaab\");\n    }\n\n    @Test\n    public void testMatchesWithCarriageReturn() {\n        assertPatternMatch(\".*\", \"/blah\\n\");\n    }\n\n    @Test\n    public void testMatchesWithLineFeed() {\n        assertPatternMatch(\".*\", \"/blah\\r\");\n    }\n\n    @Test\n    public void testCaseInsensitive() {\n        RegExPatternMatcher pm = new RegExPatternMatcher();\n        pm.setCaseInsensitive(true);\n        assertPatternMatch(\"/blah\", \"/BlaH\", pm);\n    }\n\n    @Test\n    public void testCaseSensitive() {\n        assertPatternNotMatch(\"/blah\", \"/BlaH\");\n    }\n\n    private void assertPatternMatch(String pattern, String path) {\n        assertPatternMatch(pattern, path, new RegExPatternMatcher());\n    }\n\n    private void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n        assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }\n\n    private void assertPatternNotMatch(String pattern, String path) {\n        assertPatternNotMatch(pattern, path, new RegExPatternMatcher());\n    }\n\n    private void assertPatternNotMatch(String pattern, String path, PatternMatcher pm) {\n        assertFalse(\"Expected path '\" + path + \"' to NOT match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }\n}\n",
+        "diffSourceCodeSet": [
+            "private void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n        assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }"
+        ],
+        "invokedMethodSet": [
+            "methodSignature: org.apache.shiro.util.RegExPatternMatcher#matches\n methodBody: public boolean matches(String pattern, String source) {\nif(pattern == null){throw new IllegalArgumentException(\"pattern argument cannot be null.\");\n}Pattern p=Pattern.compile(pattern);\nMatcher m=p.matcher(source);\nreturn m.matches();\n}"
+        ],
+        "sourceCodeAfterRefactoring": "private void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n        assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }\nprivate void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n        assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n    }",
+        "diffSourceCode": "-   33:     @Test\n-   34:     public void testSimplePattern() {\n-   35:         PatternMatcher pm = new RegExPatternMatcher();\n-   36:         String pattern = \"a*b\";\n-   37:         String test = \"aaaaaaab\";\n-   38:         //not necessary for the test, but Idea performs auto validation when it sees this:\n-   39:         Pattern.compile(pattern);\n-   40:         assertTrue(pm.matches(pattern, test));\n-   41:     }\n+   33:         assertPatternMatch(\"a*b\", \"aaaaaaab\");\n+   34:     }\n+   35: \n+   36:     @Test\n+   37:     public void testMatchesWithCarriageReturn() {\n+   38:         assertPatternMatch(\".*\", \"/blah\\n\");\n+   39:     }\n+   40: \n+   41:     @Test\n+   62:     private void assertPatternMatch(String pattern, String path, PatternMatcher pm) {\n+   63:         assertTrue(\"Expected path '\" + path + \"' to match pattern '\" + pattern + \"'\" , pm.matches(pattern, path));\n+   64:     }\n",
+        "uniqueId": "f42ae2c79ca7268535f4fa907d36572b953a88a6_33_41_62_64_62_64",
+        "moveFileExist": true,
+        "testResult": true,
+        "coverageInfo": {
+            "testMethod": {
+                "missed": 0,
+                "covered": 1
+            }
+        },
+        "compileResultBefore": true,
+        "compileResultCurrent": true,
+        "compileJDK": 17,
+        "callGraph": {
+            "methodId": "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern()",
+            "callers": [],
+            "callees": [
+                "java.util.regex.Pattern#<clinit>()",
+                "org.junit.Assert#assertTrue(boolean)",
+                "java.util.regex.Pattern#compile(String)",
+                "org.apache.shiro.util.RegExPatternMatcher#<init>()"
+            ],
+            "methodSourceMap": {
+                "org.apache.shiro.util.RegExPatternMatcherTest#testSimplePattern()": "@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    //not necessary for the test, but Idea performs auto validation when it sees this:\n    Pattern.compile(pattern);\n    assertTrue(pm.matches(pattern, test));\n}"
+            }
+        },
+        "phase1": {
+            "prompt": "Task: Refactor code as requested.\n\nCode to be Refactored:\n@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\nClass content:\n/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n\n\nRefactoring Operation:\nExtract Method\n\nInstructions:\n1. Analyze the provided code and class content, apply relevant refactoring operation to the code to be refactored.\n2. If refactoring is performed, output the refactored_method_code in the following format:\n##########################\nrefactored_method_code\n##########################\n\n\n\n",
+            "output": "Here's the refactored code with the `Pattern.compile(pattern)` call extracted into a separate method:\n\n```java\n@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    compilePattern(pattern); // Extracted method call\n    assertTrue(pm.matches(pattern, test));\n}\n\nprivate void compilePattern(String pattern) {\n    //not necessary for the test, but Idea performs auto validation when it sees this:\n    Pattern.compile(pattern);\n}\n```\n\nThe `compilePattern` method is a private helper method that encapsulates the `Pattern.compile(pattern)` call. This refactoring improves code readability and maintainability by separating concerns and reducing redundancy."
+        },
+        "refactoredCode": "Here's the refactored code with the `Pattern.compile(pattern)` call extracted into a separate method:\n\n```java\n@Test\npublic void testSimplePattern() {\n    PatternMatcher pm = new RegExPatternMatcher();\n    String pattern = \"a*b\";\n    String test = \"aaaaaaab\";\n    compilePattern(pattern); // Extracted method call\n    assertTrue(pm.matches(pattern, test));\n}\n\nprivate void compilePattern(String pattern) {\n    //not necessary for the test, but Idea performs auto validation when it sees this:\n    Pattern.compile(pattern);\n}\n```\n\nThe `compilePattern` method is a private helper method that encapsulates the `Pattern.compile(pattern)` call. This refactoring improves code readability and maintainability by separating concerns and reducing redundancy.",
+        "refactoringMinerResult": true,
+        "compileAndTestResult": false,
+        "prompt": "Task: Refactor code as requested.\n\nCode to be Refactored:\n@Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\nClass content:\n/*\n * Licensed to the Apache Software Foundation (ASF) under one\n * or more contributor license agreements.  See the NOTICE file\n * distributed with this work for additional information\n * regarding copyright ownership.  The ASF licenses this file\n * to you under the Apache License, Version 2.0 (the\n * \"License\"); you may not use this file except in compliance\n * with the License.  You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing,\n * software distributed under the License is distributed on an\n * \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n * KIND, either express or implied.  See the License for the\n * specific language governing permissions and limitations\n * under the License.\n */\npackage org.apache.shiro.util;\n\nimport org.junit.Test;\nimport static org.junit.Assert.*;\n\nimport java.util.regex.Pattern;\n\n/**\n * Unit tests for the {@link RegExPatternMatcher}.\n *\n * @since 1.0\n */\npublic class RegExPatternMatcherTest {\n\n    @Test\n    public void testSimplePattern() {\n        PatternMatcher pm = new RegExPatternMatcher();\n        String pattern = \"a*b\";\n        String test = \"aaaaaaab\";\n        //not necessary for the test, but Idea performs auto validation when it sees this:\n        Pattern.compile(pattern);\n        assertTrue(pm.matches(pattern, test));\n    }\n\n}\n\n\nRefactoring Operation:\nExtract Method\n\nInstructions:\n1. Analyze the provided code and class content, apply relevant refactoring operation to the code to be refactored.\n2. If refactoring is performed, output the refactored_method_code in the following format:\n##########################\nrefactored_method_code\n##########################\n\n\n\n"
+    }
+]

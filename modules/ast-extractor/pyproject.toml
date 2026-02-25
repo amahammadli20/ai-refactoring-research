@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ast-extractor"
+version = "0.1.0"
+description = "Module 1: AST extraction using Tree-sitter (skeleton)"
+requires-python = ">=3.10"
+dependencies = [
+  "GitPython>=3.1.40",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+  "mypy>=1.8.0",
+]
+
+[project.scripts]
+ast-extract = "ast_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100

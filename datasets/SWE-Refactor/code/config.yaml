@@ -1,0 +1,4 @@
+project_prefix_path: {Path to your project directory, e.g., /Users/xxx/xxx/MUARF/code}
+OPENAI_API_KEY: {Your OpenAI API key}
+chromadb_host: {ChromaDB host address; use "localhost" if running ChromaDB locally}
+project_name: {Name of the evaluation project, e.g., "commons-io"}
