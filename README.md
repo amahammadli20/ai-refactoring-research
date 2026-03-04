@@ -358,4 +358,175 @@ It goes beyond simple code generation by:
 - Enabling structural analysis
 - Supporting benchmark-style evaluation
 
-This system forms the foundation for deeper investigation into repository-aware, behavior-preserving AI refactoring systems.
+---
+
+# 17. Recent Development Progress (Method-Level Refactoring Pipeline)
+
+As part of the ongoing development of the evaluation infrastructure, an experimental **method-level refactoring pipeline** has been implemented.
+
+This extension moves beyond file-level refactoring and enables targeted transformation of individual Java methods inside a repository.
+
+The goal of this stage is to test whether local LLMs can safely refactor specific code regions while preserving compilation and behavioral correctness.
+
+---
+
+## Method-Level Refactoring Workflow
+
+The implemented workflow consists of the following stages:
+
+### 1. Repository AST Extraction
+
+Java repositories are parsed using the Tree-sitter-based extraction module.  
+The pipeline produces a JSON file (`commons_io_methods.json`) containing metadata for each discovered method, including:
+
+- file path  
+- method signature  
+- byte range  
+- method body  
+- structural metadata  
+
+---
+
+### 2. Method Selection
+
+Candidate methods are selected using heuristic filters such as:
+
+- method body length (e.g., 400–2000 characters)  
+- non-constructor methods  
+- valid source locations  
+
+This allows controlled sampling of refactoring targets.
+
+---
+
+### 3. Method Body Extraction
+
+The target method body is extracted from the repository and saved to a temporary file.
+
+Example:
+
+```
+
+/tmp/method_block_1766.txt
+
+```
+
+---
+
+### 4. Local LLM Refactoring
+
+The extracted method body is sent to a local LLM via Ollama.
+
+Tested models:
+
+- `deepseek-coder:1.3b`  
+- `deepseek-coder:6.7b`  
+
+The model is prompted to produce a refactored version of the method body while preserving behavior.
+
+---
+
+### 5. Output Sanitization
+
+Because LLM outputs frequently contain:
+
+- markdown code fences  
+- commentary text  
+- malformed structures  
+
+a sanitization step is applied to extract a valid Java code block.
+
+Implemented in:
+
+```
+
+scripts/sanitize_block.py
+
+```
+
+---
+
+### 6. Method Replacement
+
+The sanitized refactored method body is injected back into the original source file using byte-range replacement.
+
+Implemented in:
+
+```
+
+scripts/replace_method_block.py
+
+```
+
+---
+
+### 7. Patch Verification
+
+The modified source file is compared against the original using a unified diff.
+
+This allows inspection of the exact transformation produced by the LLM.
+
+---
+
+### 8. Compilation Validation
+
+The modified repository is compiled and tested using Maven:
+
+```
+
+mvn -Dtest=<TestClass> test
+
+```
+
+This verifies whether the generated refactoring preserves syntactic correctness and test behavior.
+
+---
+
+## Supporting Scripts
+
+The method-level pipeline is implemented through the following helper scripts:
+
+```
+
+scripts/extract_methods_java.py
+scripts/inject_method_body.py
+scripts/llm_refactor_block_ollama.py
+scripts/replace_method_block.py
+scripts/sanitize_block.py
+
+```
+
+These scripts together enable automated extraction, refactoring, and reinsertion of method bodies within a repository.
+
+---
+
+## Experimental Observations
+
+During early experiments several important behaviors were observed:
+
+- Smaller LLM models often produce invalid or incomplete refactorings.  
+- LLM outputs frequently include non-code artifacts that must be sanitized.  
+- Tokenization artifacts from some models can introduce illegal characters in Java source files.  
+- Even small refactorings may break compilation if method boundaries are not preserved precisely.  
+
+These findings highlight the need for robust validation mechanisms when evaluating AI-generated refactorings.
+
+---
+
+## Research Impact
+
+The addition of method-level refactoring support significantly expands the evaluation capabilities of the system.
+
+It enables experiments that answer questions such as:
+
+- Can LLMs safely refactor individual methods?  
+- How often do generated refactorings preserve compilation?  
+- How stable are LLM-generated code transformations?  
+
+This capability will support future experiments involving:
+
+- automated large-scale refactoring evaluation  
+- structural impact analysis  
+- behavioral preservation studies  
+
+---
