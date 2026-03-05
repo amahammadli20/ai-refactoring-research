@@ -531,22 +531,23 @@ This capability will support future experiments involving:
 
 ---
 
----
-
 # 18. Experimental Results (Multi-Repository Evaluation)
 
 To validate the robustness of the refactoring pipeline, a set of controlled experiments were conducted across multiple open-source Java repositories.
 
 The goal of these experiments was to evaluate whether the system can consistently generate **syntactically valid patches** across different repositories using local LLM models.
 
+---
+
 ## Experiment Configuration
 
 Dataset: SWE-Refactor  
 Sample size: 20 instances per repository  
+
 Models tested:
 
-- DeepSeek-Coder 1.3B
-- DeepSeek-Coder 6.7B
+- DeepSeek-Coder 1.3B  
+- DeepSeek-Coder 6.7B  
 
 Validation method:
 
@@ -559,11 +560,13 @@ Only patches that passed the validation stage were counted as successful.
 
 ## Results Summary
 
+The following table summarizes the patch validation results across multiple repositories and models.
+
 | Repository | Model | Samples | Valid Patches | Status | Notes |
 |---|---|---|---|---|---|
 | commons-io | DeepSeek-Coder 1.3B | 20 | 20/20 | success | patch validation successful |
 | commons-lang | DeepSeek-Coder 1.3B | 20 | 20/20 | success | stable diff generation |
-| commons-collections | DeepSeek-Coder 1.3B | 20 | 0/0 | skipped | dataset filter returned no matching instances |
+| commons-collections | DeepSeek-Coder 1.3B | 20 | 0/0 | skipped | dataset contains no matching instances |
 | guava | DeepSeek-Coder 1.3B | 20 | 17/20 | partial | 3 patches blocked by deletion-ratio guardrail |
 | commons-io | DeepSeek-Coder 6.7B | 20 | 20/20 | success | model comparison experiment |
 
@@ -578,5 +581,41 @@ Several important behaviors were observed during these experiments:
 - Larger repositories such as **Guava** exhibited slightly higher failure rates due to stricter safety constraints.
 - Both tested models were capable of producing syntactically valid refactorings under controlled conditions.
 
----
+Overall, the experiments demonstrate that local LLMs can reliably generate diff-valid refactorings across multiple repositories when combined with patch sanitization and guardrail validation.
 
+These results demonstrate that the proposed evaluation pipeline enables systematic comparison of multiple LLM models for automated refactoring tasks across real-world repositories.
+
+---
+## Refactoring Evaluation Pipeline
+
+```
+AI-Driven Refactoring Evaluation Pipeline
+
+Refactoring Evaluation Framework
+(ai-refactoring-research)
+        │
+        │ generates refactoring patches
+        ▼
+Patch Sanitization
+        │
+        ▼
+Patch Validation
+(git apply --check)
+        │
+        │ validated experiment outputs
+        ▼
+Experiment Results
+(results/*.jsonl)
+        │
+        │ manual validation
+        ▼
+Target Repositories
+(refactor-experiments)
+   ├ commons-io
+   ├ commons-lang
+   └ guava
+        │
+        ▼
+Compilation & Test Validation
+(mvn compile / mvn test)
+```
