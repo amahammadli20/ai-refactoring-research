@@ -619,3 +619,91 @@ Target Repositories
 Compilation & Test Validation
 (mvn compile / mvn test)
 ```
+
+
+# 19. Multi-Model Comparative Evaluation
+
+To further evaluate the behavior of different local LLMs in automated refactoring tasks, a small pilot comparative experiment was conducted using the same evaluation pipeline.
+
+The goal of this experiment was not to measure final model performance, but to observe how different LLM architectures behave when generating refactoring patches under identical conditions.
+
+---
+
+## Experiment Setup
+
+Dataset: SWE-Refactor (`pure_refactoring_data.json`)  
+Repository: Apache Commons Lang  
+Evaluation pipeline: `run_swe_refactor_offline.py`  
+Execution environment: local models via Ollama  
+
+Sample size per model:  
+10 refactoring tasks
+
+Models evaluated:
+
+- DeepSeek-Coder 6.7B
+- CodeLlama 7B
+- StarCoder2 7B
+
+All experiments used the same pipeline configuration and patch validation process.
+
+---
+
+## Example Experiment Command
+
+```
+python3 scripts/run_swe_refactor_offline.py \
+  --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
+  --local-llm scripts/local_llm.py \
+  --model codellama:7b \
+  --project commons-lang \
+  --limit 10 \
+  --out /tmp/exp_commons_lang_codellama_10.jsonl
+```
+
+The same configuration was executed for each model.
+
+---
+
+## Results
+
+| Model | Samples | Successful Runs | Avg Added Lines | Avg Deleted Lines |
+|---|---|---|---|---|
+| CodeLlama 7B | 10 | 10/10 | ~32 | ~1 |
+| DeepSeek-Coder 6.7B | 10 | 10/10 | ~5 | ~1 |
+| StarCoder2 7B | 10 | 10/10 | ~0 | ~1 |
+
+---
+
+## Observations
+
+The experiment revealed significant differences in patch generation behavior across models.
+
+Key observations:
+
+- **CodeLlama 7B** generated the largest structural modifications.
+- **DeepSeek-Coder 6.7B** produced smaller but meaningful refactoring edits.
+- **StarCoder2 7B** frequently generated minimal or near-empty patches.
+
+Although all models successfully passed the pipeline validation stage, the magnitude and substance of the generated patches differed considerably.
+
+---
+
+## Key Insight
+
+These results suggest that evaluating LLM-based refactoring systems cannot rely solely on execution success metrics.
+
+Even when patches pass validation (`git apply --check`), the structural impact of the generated changes may vary significantly between models.
+
+Therefore, effective evaluation of automated refactoring systems must consider both:
+
+- patch validity
+- structural significance of the generated modifications
+
+---
+
+## Research Implication
+
+The experiment demonstrates that local LLMs can be integrated into a reproducible refactoring evaluation pipeline and compared under controlled experimental conditions.
+
+This capability enables systematic benchmarking of LLM-based refactoring approaches across repositories, models, and datasets.
