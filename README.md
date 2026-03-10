@@ -707,3 +707,43 @@ Therefore, effective evaluation of automated refactoring systems must consider b
 The experiment demonstrates that local LLMs can be integrated into a reproducible refactoring evaluation pipeline and compared under controlled experimental conditions.
 
 This capability enables systematic benchmarking of LLM-based refactoring approaches across repositories, models, and datasets.
+
+
+## 20. Extended Experiment (Scaled Evaluation – 200 Samples)
+
+To further evaluate the robustness of the refactoring pipeline, an extended experiment was executed using the **DeepSeek-Coder 6.7B** model on the `commons-lang` repository.
+
+The evaluation was configured with a target limit of **200 refactoring tasks** using the SWE-Refactor dataset.
+
+### Example Command
+
+```bash
+python3 scripts/run_swe_refactor_offline.py \
+  --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
+  --local-llm scripts/local_llm.py \
+  --model deepseek-coder:6.7b \
+  --project commons-lang \
+  --limit 200 \
+  --out results/exp_commons_lang_6p7b_200.jsonl
+```
+
+### Results
+
+Due to dataset filtering for the `commons-lang` repository, the pipeline processed **59 matching refactoring instances**.
+
+| Metric | Value |
+|------|------|
+| Processed samples | 59 |
+| Successful patches | 58 |
+| Guardrail failures | 1 |
+| Success rate | ~98.3% |
+
+The single failure was caused by the **deletion-ratio guardrail**, which blocked a patch that exceeded the allowed modification threshold.
+
+The raw experiment output is available in:
+
+```
+results/exp_commons_lang_6p7b_200.jsonl
+```
+
+This extended evaluation demonstrates that the refactoring pipeline remains stable when scaled beyond the initial proof-of-concept experiments.
