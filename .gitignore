@@ -15,3 +15,10 @@ out/
 *.log
 .github/workflows/
 datasets/SWE-Refactor/pure_refactoring_data.json
+!results/
+!results/*.jsonl
+!results/**/*.jsonl
+
+# macOS system files
+.DS_Store
+**/.DS_Store
