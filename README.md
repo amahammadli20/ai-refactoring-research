@@ -1,6 +1,8 @@
 # AI-Driven Refactoring Research  
 ## A Modular Repository-Level Evaluation Infrastructure for LLM-Based Refactoring
 
+> **Research Status:** Active experimental infrastructure for repository-level and method-level evaluation of LLM-based automated refactoring using fully offline local models.
+
 ---
 
 # 1. Project Overview
@@ -48,21 +50,23 @@ This project builds the missing infrastructure required for:
 
 The system follows the pipeline below:
 
-Repository  
-↓  
-AST Extraction (Tree-sitter)  
-↓  
-Structural Summary Extraction  
-↓  
-Local LLM Refactoring  
-↓  
-Unified Diff Extraction  
-↓  
-Patch Sanitization  
-↓  
-git apply --check Validation  
-↓  
-Experiment Logging (JSONL)  
+```text
+Repository
+↓
+AST Extraction (Tree-sitter)
+↓
+Structural Summary Extraction
+↓
+Local LLM Refactoring
+↓
+Unified Diff Extraction
+↓
+Patch Sanitization
+↓
+git apply --check Validation
+↓
+Experiment Logging (JSONL)
+```
 
 Each stage is modular and independently extensible.
 
@@ -70,19 +74,57 @@ Each stage is modular and independently extensible.
 
 # 4. Repository Structure
 
-    ai-refactoring-research/
+```text
+ai-refactoring-research/
 
-    modules/
-      ast-extractor/
+.github/
+  workflows/
+    ci.yml
 
-    scripts/
-      local_llm.py
-      run_swe_refactor_offline.py
+datasets/
+  SWE-Refactor/
+    code/
+    experimental-results/
+    pure_refactoring_data.json
 
-    datasets/
-      SWE-Refactor/
+docs/
+  architecture.md
+  module-01-ast-extraction.md
+  running-experiments.md
+
+modules/
+  ast-extractor/
+
+results/
+  *.jsonl
+
+scripts/
+  analyze_results.py
+  extract_methods_java.py
+  inject_method_body.py
+  llm_refactor_block_ollama.py
+  local_llm.py
+  replace_method_block.py
+  run_swe_refactor_offline.py
+  sanitize_block.py
+
+requirements.txt
+README.md
+```
 
 The repository is organized to allow additional modules (e.g., evaluation, benchmarking, structural comparison) to be added without restructuring the codebase.
+
+---
+
+# 4.1 Additional Documentation
+
+Detailed technical documentation is available in the `docs/` directory:
+
+- `docs/architecture.md`
+- `docs/module-01-ast-extraction.md`
+- `docs/running-experiments.md`
+
+The repository is organized so that detailed technical explanations live under `docs/`, reusable experiment scripts live under `scripts/`, and the main experiment outputs used for analysis and reporting are stored under `results/`.
 
 ---
 
@@ -101,12 +143,14 @@ Tree-sitter parsing is currently integrated at a structural level, but deeper se
 
 ## Example Usage
 
-    ast-extract \
-      --repo https://github.com/apache/commons-io \
-      --out out.jsonl \
-      --languages java \
-      --max-files 10 \
-      --summary
+```bash
+ast-extract \
+  --repo https://github.com/apache/commons-io \
+  --out out.jsonl \
+  --languages java \
+  --max-files 10 \
+  --summary
+```
 
 Each processed file produces a JSONL record containing structural metadata and optional summaries.
 
@@ -148,8 +192,10 @@ The system is designed to run fully offline without paid APIs.
 
 ## Installation
 
-    brew install ollama
-    ollama pull deepseek-coder:6.7b
+```bash
+brew install ollama
+ollama pull deepseek-coder:6.7b
+```
 
 This ensures reproducibility and controlled experimental conditions.
 
@@ -159,7 +205,9 @@ This ensures reproducibility and controlled experimental conditions.
 
 Implemented in:
 
-    scripts/local_llm.py
+```text
+scripts/local_llm.py
+```
 
 ## Capabilities
 
@@ -172,7 +220,7 @@ Implemented in:
 - Unified diff extraction
 - Patch sanitization
 - Hunk verification
-- git apply --check validation
+- `git apply --check` validation
 - Structured JSON experiment output
 
 This module transforms raw model output into machine-applicable, validated patches.
@@ -197,7 +245,9 @@ To ensure patch reliability, the system:
 5. Verifies hunk format
 6. Executes:
 
-    git apply --check
+```bash
+git apply --check
+```
 
 Only syntactically valid patches are logged as successful.
 
@@ -207,76 +257,73 @@ Only syntactically valid patches are logged as successful.
 
 Implemented in:
 
-    scripts/run_swe_refactor_offline.py
+```text
+scripts/run_swe_refactor_offline.py
+```
 
-Example execution:
+## Example Execution
 
-    python3 scripts/run_swe_refactor_offline.py \
-      --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
-      --local-llm scripts/local_llm.py \
-      --model deepseek-coder:1.3b \
-      --project commons-io \
-      --limit 20 \
-      --retries 0 \
-      --out /tmp/swe_method_commons_io.jsonl
+```bash
+python3 scripts/run_swe_refactor_offline.py \
+  --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
+  --local-llm scripts/local_llm.py \
+  --model deepseek-coder:1.3b \
+  --project commons-io \
+  --limit 20 \
+  --retries 0 \
+  --out /tmp/swe_method_commons_io.jsonl
+```
 
 For each dataset instance, the system:
 
 - Extracts the target file
-- Sends snippet to the local LLM
-- Generates unified diff
+- Sends the snippet to the local LLM
+- Generates a unified diff
 - Sanitizes the patch
 - Validates using `git apply --check`
 - Logs:
-  - ok (boolean)
-  - added lines
-  - deleted lines
-  - error (if any)
+  - `ok` (boolean)
+  - `added lines`
+  - `deleted lines`
+  - `error` (if any)
 
 This enables structured experiment tracking and large-scale evaluation.
 
 ---
 
-# 11. What Is Currently Working
+# 11. Current Limitations
+
+- Compilation validation is currently performed in a separate validation repository rather than fully integrated into the main pipeline.
+- Test-suite validation is currently executed manually on selected repositories after patch generation.
+- Structural before/after comparison is partially supported, but not yet standardized as a full evaluation metric.
+- Some smaller local models may produce minimal or low-substance patches even when validation succeeds.
+
+These limitations do not affect the reproducibility of the current experiments, but they define the current scope of the repository.
+
+---
+
+# 12. Current System Capabilities
+
+The current system provides a complete repository-aware evaluation pipeline for LLM-driven refactoring experiments.
+
+The implemented infrastructure includes:
 
 - Repository-aware AST extraction pipeline
-- Structural summary generation
+- Structural Java summary generation
 - Local LLM inference via Ollama
 - Unified diff extraction
 - Patch sanitization
-- git apply validation
-- Offline SWE-style experiment loop
-- JSONL structured logging
+- Patch validation using `git apply --check`
+- Offline SWE-style experiment execution loop
+- Method-level refactoring and reinsertion
+- JSONL-based structured experiment logging
+- Automated results aggregation using `scripts/analyze_results.py`
 
-The end-to-end refactoring evaluation pipeline is operational.
-
----
-
-# 12. Known Limitations
-
-- Compilation validation not yet integrated
-- Test-suite validation not yet integrated
-- Large-file refactoring may produce unstable diffs
-- Structural delta comparison is not fully automated
-- Method-level targeting is not yet implemented
-
-These are active areas of ongoing research development.
+Together, these components form an end-to-end refactoring evaluation framework capable of running controlled experiments across real-world repositories using local LLM models.
 
 ---
 
-# 13. Planned Research Extensions
-
-1. Integrate compilation validation (mvn compile)
-2. Integrate test execution (mvn test)
-3. Automate structural before/after comparison
-4. Move from file-level to method-level refactoring
-5. Compare multiple local LLM models
-6. Conduct statistical analysis across larger datasets
-7. Evaluate behavior-preservation reliability
-
----
-
-# 14. Research Contribution
+# 13. Research Contribution
 
 This project contributes:
 
@@ -290,77 +337,7 @@ It establishes the experimental foundation necessary for rigorous evaluation of 
 
 ---
 
-# 15. Reproducibility
-
-Environment:
-
-- macOS
-- Python 3.10+
-- Ollama
-- deepseek-coder model
-
-All experiments can be reproduced locally without external APIs.
-
----
-
-# Dataset Setup
-
-This repository does **not** store the SWE-Refactor dataset directly.
-
-The dataset file:
-
-    datasets/SWE-Refactor/pure_refactoring_data.json
-
-is intentionally excluded from version control because it exceeds GitHub’s recommended file size limits and is treated as external research data.
-
-## How to Prepare the Dataset
-
-1. Obtain the SWE-Refactor dataset (JSON format).
-2. Create the directory structure:
-
-       datasets/SWE-Refactor/
-
-3. Place the dataset file inside:
-
-       datasets/SWE-Refactor/pure_refactoring_data.json
-
-The evaluation script expects the dataset at this exact path.
-
-## Expected Script Usage
-
-Example execution:
-
-    python3 scripts/run_swe_refactor_offline.py \
-      --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
-      --local-llm scripts/local_llm.py \
-      --model deepseek-coder:1.3b \
-      --project commons-io \
-      --limit 20 \
-      --retries 0 \
-      --out /tmp/swe_method_commons_io.jsonl
-
-If the dataset file is not present at the expected location, the script will fail.
-
----
-
-This design keeps the repository lightweight while ensuring reproducibility of experiments.
-
----
-
-# 16. Conclusion
-
-This repository provides a research-grade infrastructure for evaluating LLM-based refactoring at the repository level.
-
-It goes beyond simple code generation by:
-
-- Validating patches automatically
-- Logging structured experiment results
-- Enabling structural analysis
-- Supporting benchmark-style evaluation
-
----
-
-# 17. Recent Development Progress (Method-Level Refactoring Pipeline)
+# 14. Method-Level Refactoring Pipeline
 
 As part of the ongoing development of the evaluation infrastructure, an experimental **method-level refactoring pipeline** has been implemented.
 
@@ -376,14 +353,15 @@ The implemented workflow consists of the following stages:
 
 ### 1. Repository AST Extraction
 
-Java repositories are parsed using the Tree-sitter-based extraction module.  
-The pipeline produces a JSON file (`commons_io_methods.json`) containing metadata for each discovered method, including:
+Java repositories are parsed using the Tree-sitter-based extraction module.
 
-- file path  
-- method signature  
-- byte range  
-- method body  
-- structural metadata  
+The pipeline produces a JSON file (e.g., `commons_io_methods.json`) containing metadata for each discovered method, including:
+
+- File path
+- Method signature
+- Byte range
+- Method body
+- Structural metadata
 
 ---
 
@@ -391,9 +369,9 @@ The pipeline produces a JSON file (`commons_io_methods.json`) containing metadat
 
 Candidate methods are selected using heuristic filters such as:
 
-- method body length (e.g., 400–2000 characters)  
-- non-constructor methods  
-- valid source locations  
+- Method body length (e.g., 400–2000 characters)
+- Non-constructor methods
+- Valid source locations
 
 This allows controlled sampling of refactoring targets.
 
@@ -405,10 +383,8 @@ The target method body is extracted from the repository and saved to a temporary
 
 Example:
 
-```
-
+```text
 /tmp/method_block_1766.txt
-
 ```
 
 ---
@@ -419,8 +395,8 @@ The extracted method body is sent to a local LLM via Ollama.
 
 Tested models:
 
-- `deepseek-coder:1.3b`  
-- `deepseek-coder:6.7b`  
+- `deepseek-coder:1.3b`
+- `deepseek-coder:6.7b`
 
 The model is prompted to produce a refactored version of the method body while preserving behavior.
 
@@ -430,18 +406,16 @@ The model is prompted to produce a refactored version of the method body while p
 
 Because LLM outputs frequently contain:
 
-- markdown code fences  
-- commentary text  
-- malformed structures  
+- Markdown code fences
+- Commentary text
+- Malformed structures
 
-a sanitization step is applied to extract a valid Java code block.
+A sanitization step is applied to extract a valid Java code block.
 
 Implemented in:
 
-```
-
+```text
 scripts/sanitize_block.py
-
 ```
 
 ---
@@ -452,10 +426,8 @@ The sanitized refactored method body is injected back into the original source f
 
 Implemented in:
 
-```
-
+```text
 scripts/replace_method_block.py
-
 ```
 
 ---
@@ -472,10 +444,8 @@ This allows inspection of the exact transformation produced by the LLM.
 
 The modified repository is compiled and tested using Maven:
 
-```
-
+```bash
 mvn -Dtest=<TestClass> test
-
 ```
 
 This verifies whether the generated refactoring preserves syntactic correctness and test behavior.
@@ -486,14 +456,12 @@ This verifies whether the generated refactoring preserves syntactic correctness 
 
 The method-level pipeline is implemented through the following helper scripts:
 
-```
-
+```text
 scripts/extract_methods_java.py
 scripts/inject_method_body.py
 scripts/llm_refactor_block_ollama.py
 scripts/replace_method_block.py
 scripts/sanitize_block.py
-
 ```
 
 These scripts together enable automated extraction, refactoring, and reinsertion of method bodies within a repository.
@@ -502,12 +470,12 @@ These scripts together enable automated extraction, refactoring, and reinsertion
 
 ## Experimental Observations
 
-During early experiments several important behaviors were observed:
+During early experiments, several important behaviors were observed:
 
-- Smaller LLM models often produce invalid or incomplete refactorings.  
-- LLM outputs frequently include non-code artifacts that must be sanitized.  
-- Tokenization artifacts from some models can introduce illegal characters in Java source files.  
-- Even small refactorings may break compilation if method boundaries are not preserved precisely.  
+- Smaller LLM models often produce invalid or incomplete refactorings.
+- LLM outputs frequently include non-code artifacts that must be sanitized.
+- Tokenization artifacts from some models can introduce illegal characters in Java source files.
+- Even small refactorings may break compilation if method boundaries are not preserved precisely.
 
 These findings highlight the need for robust validation mechanisms when evaluating AI-generated refactorings.
 
@@ -519,19 +487,19 @@ The addition of method-level refactoring support significantly expands the evalu
 
 It enables experiments that answer questions such as:
 
-- Can LLMs safely refactor individual methods?  
-- How often do generated refactorings preserve compilation?  
-- How stable are LLM-generated code transformations?  
+- Can LLMs safely refactor individual methods?
+- How often do generated refactorings preserve compilation?
+- How stable are LLM-generated code transformations?
 
 This capability will support future experiments involving:
 
-- automated large-scale refactoring evaluation  
-- structural impact analysis  
-- behavioral preservation studies  
+- Automated large-scale refactoring evaluation
+- Structural impact analysis
+- Behavioral preservation studies
 
 ---
 
-# 18. Experimental Results (Multi-Repository Evaluation)
+# 15. Experimental Results (Multi-Repository Evaluation)
 
 To validate the robustness of the refactoring pipeline, a set of controlled experiments were conducted across multiple open-source Java repositories.
 
@@ -542,12 +510,12 @@ The goal of these experiments was to evaluate whether the system can consistentl
 ## Experiment Configuration
 
 Dataset: SWE-Refactor  
-Sample size: 20 instances per repository  
+Sample size: 20 instances per repository
 
 Models tested:
 
-- DeepSeek-Coder 1.3B  
-- DeepSeek-Coder 6.7B  
+- DeepSeek-Coder 1.3B
+- DeepSeek-Coder 6.7B
 
 Validation method:
 
@@ -562,13 +530,15 @@ Only patches that passed the validation stage were counted as successful.
 
 The following table summarizes the patch validation results across multiple repositories and models.
 
-| Repository | Model | Samples | Valid Patches | Status | Notes |
-|---|---|---|---|---|---|
-| commons-io | DeepSeek-Coder 1.3B | 20 | 20/20 | success | patch validation successful |
-| commons-lang | DeepSeek-Coder 1.3B | 20 | 20/20 | success | stable diff generation |
-| commons-collections | DeepSeek-Coder 1.3B | 20 | 0/0 | skipped | dataset contains no matching instances |
-| guava | DeepSeek-Coder 1.3B | 20 | 17/20 | partial | 3 patches blocked by deletion-ratio guardrail |
-| commons-io | DeepSeek-Coder 6.7B | 20 | 20/20 | success | model comparison experiment |
+| Repository | Samples | Model | Valid Patches | Guardrail Failures | Success Rate |
+|---|---:|---|---:|---:|---:|
+| commons-io | 20 | DeepSeek-Coder 1.3B | 20 | 0 | 100.0% |
+| commons-io | 20 | DeepSeek-Coder 6.7B | 20 | 0 | 100.0% |
+| commons-lang | 20 | DeepSeek-Coder 1.3B | 20 | 0 | 100.0% |
+| commons-lang | 50 | DeepSeek-Coder 6.7B | 49 | 1 | 98.0% |
+| commons-lang (extended) | 59 | DeepSeek-Coder 6.7B | 58 | 1 | 98.3% |
+| guava | 20 | DeepSeek-Coder 1.3B | 17 | 3 | 85.0% |
+| guava | 50 | DeepSeek-Coder 6.7B | 47 | 3 | 94.0% |
 
 ---
 
@@ -586,9 +556,10 @@ Overall, the experiments demonstrate that local LLMs can reliably generate diff-
 These results demonstrate that the proposed evaluation pipeline enables systematic comparison of multiple LLM models for automated refactoring tasks across real-world repositories.
 
 ---
+
 ## Refactoring Evaluation Pipeline
 
-```
+```text
 AI-Driven Refactoring Evaluation Pipeline
 
 Refactoring Evaluation Framework
@@ -620,8 +591,9 @@ Compilation & Test Validation
 (mvn compile / mvn test)
 ```
 
+---
 
-# 19. Multi-Model Comparative Evaluation
+# 16. Multi-Model Comparative Evaluation
 
 To further evaluate the behavior of different local LLMs in automated refactoring tasks, a small pilot comparative experiment was conducted using the same evaluation pipeline.
 
@@ -634,7 +606,7 @@ The goal of this experiment was not to measure final model performance, but to o
 Dataset: SWE-Refactor (`pure_refactoring_data.json`)  
 Repository: Apache Commons Lang  
 Evaluation pipeline: `run_swe_refactor_offline.py`  
-Execution environment: local models via Ollama  
+Execution environment: local models via Ollama
 
 Sample size per model:  
 10 refactoring tasks
@@ -651,7 +623,7 @@ All experiments used the same pipeline configuration and patch validation proces
 
 ## Example Experiment Command
 
-```
+```bash
 python3 scripts/run_swe_refactor_offline.py \
   --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
   --local-llm scripts/local_llm.py \
@@ -668,7 +640,7 @@ The same configuration was executed for each model.
 ## Results
 
 | Model | Samples | Successful Runs | Avg Added Lines | Avg Deleted Lines |
-|---|---|---|---|---|
+|---|---:|---:|---:|---:|
 | CodeLlama 7B | 10 | 10/10 | ~32 | ~1 |
 | DeepSeek-Coder 6.7B | 10 | 10/10 | ~5 | ~1 |
 | StarCoder2 7B | 10 | 10/10 | ~0 | ~1 |
@@ -697,8 +669,8 @@ Even when patches pass validation (`git apply --check`), the structural impact o
 
 Therefore, effective evaluation of automated refactoring systems must consider both:
 
-- patch validity
-- structural significance of the generated modifications
+- Patch validity
+- Structural significance of the generated modifications
 
 ---
 
@@ -708,14 +680,15 @@ The experiment demonstrates that local LLMs can be integrated into a reproducibl
 
 This capability enables systematic benchmarking of LLM-based refactoring approaches across repositories, models, and datasets.
 
+---
 
-## 20. Extended Experiment (Scaled Evaluation – 200 Samples)
+# 17. Extended Experiment (Scaled Evaluation – 200 Samples)
 
 To further evaluate the robustness of the refactoring pipeline, an extended experiment was executed using the **DeepSeek-Coder 6.7B** model on the `commons-lang` repository.
 
 The evaluation was configured with a target limit of **200 refactoring tasks** using the SWE-Refactor dataset.
 
-### Example Command
+## Example Command
 
 ```bash
 python3 scripts/run_swe_refactor_offline.py \
@@ -727,12 +700,12 @@ python3 scripts/run_swe_refactor_offline.py \
   --out results/exp_commons_lang_6p7b_200.jsonl
 ```
 
-### Results
+## Results
 
 Due to dataset filtering for the `commons-lang` repository, the pipeline processed **59 matching refactoring instances**.
 
 | Metric | Value |
-|------|------|
+|---|---:|
 | Processed samples | 59 |
 | Successful patches | 58 |
 | Guardrail failures | 1 |
@@ -742,8 +715,109 @@ The single failure was caused by the **deletion-ratio guardrail**, which blocked
 
 The raw experiment output is available in:
 
-```
+```text
 results/exp_commons_lang_6p7b_200.jsonl
 ```
 
 This extended evaluation demonstrates that the refactoring pipeline remains stable when scaled beyond the initial proof-of-concept experiments.
+
+---
+
+# 18. Reproducibility & Dataset Setup
+
+## Environment
+
+- macOS
+- Python 3.10+
+- Ollama
+- DeepSeek-Coder local models
+
+All experiments are designed to be reproducible locally without paid external APIs.
+
+The main experiment artifacts used for analysis are stored in:
+
+```text
+results/
+```
+
+These JSONL files are used to generate aggregate summaries and populate the experiment tables reported in this repository.
+
+For end-to-end execution details, see:
+
+- `docs/running-experiments.md`
+
+To generate aggregate result summaries from the experiment outputs, run:
+
+```bash
+python scripts/analyze_results.py
+```
+
+---
+
+## Dataset Setup
+
+This repository expects the SWE-Refactor dataset assets under:
+
+```text
+datasets/SWE-Refactor/
+```
+
+Depending on local setup, the dataset file `pure_refactoring_data.json` may be provided externally or prepared manually before running the offline evaluation pipeline.
+
+### Expected Layout
+
+```text
+datasets/
+  SWE-Refactor/
+    pure_refactoring_data.json
+```
+
+### Example Usage
+
+```bash
+python3 scripts/run_swe_refactor_offline.py \
+  --dataset datasets/SWE-Refactor/pure_refactoring_data.json \
+  --local-llm scripts/local_llm.py \
+  --model deepseek-coder:1.3b \
+  --project commons-io \
+  --limit 20 \
+  --retries 0 \
+  --out /tmp/swe_method_commons_io.jsonl
+```
+
+If the dataset file is not present at the expected location, the offline evaluation script will fail.
+
+### How to Prepare the Dataset
+
+1. Obtain the SWE-Refactor dataset (JSON format).
+2. Create the directory structure:
+
+```text
+datasets/SWE-Refactor/
+```
+
+3. Place the dataset file inside:
+
+```text
+datasets/SWE-Refactor/pure_refactoring_data.json
+```
+
+The evaluation script expects the dataset at this exact path.
+
+This design keeps the repository lightweight while ensuring reproducibility of experiments.
+
+---
+
+# 19. Conclusion
+
+This repository provides a research-grade infrastructure for evaluating LLM-based refactoring at the repository level.
+
+Rather than focusing only on code generation, the system emphasizes:
+
+- Automated patch validation
+- Structured experiment logging
+- Structural code analysis
+- Benchmark-style offline evaluation
+- Controlled comparison across local LLMs
+
+The project establishes a reproducible experimental foundation for studying the reliability, stability, and structural impact of AI-driven automated refactoring systems in realistic repository settings.
