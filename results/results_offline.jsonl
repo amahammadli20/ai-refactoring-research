@@ -1,0 +1,1 @@
+{"projectName": "commons-io", "commitId": "f448f97af45a5e4dcbb8937499076c1538f7c81d", "filePathBefore": "src/test/java/org/apache/commons/io/input/ObservableInputStreamTest.java", "methodNameBefore": "org.apache.commons.io.input.ObservableInputStreamTest#testBrokenInputStreamRead", "ok": true, "error": null, "diff_add": 1, "diff_del": 1}
